@@ -208,6 +208,11 @@ release_lock() {
     rm -f "${LCK_FILE}"
 }
 
+# Check if the git working dir is dirty
+# This must be checked before lock is written,
+# because otherwise directory is always dirty
+CLEAN_REPO=`${GIT_BIN} status | grep "nothing to commit (working directory clean)" | wc -l`
+
 # Checks locking, make sure this only run once a time
 if [ -f "${LCK_FILE}" ]; then
 
@@ -240,9 +245,8 @@ if [ ! -d ".git" ]; then
     exit 1
 fi 
 
-# Check if the git working dir is dirty
-DIRTY_REPO=`${GIT_BIN} update-index --refresh | wc -l ` 
-if [ ${DIRTY_REPO} -eq 1 ]; then 
+# Exit if the git working dir is dirty
+if [ $CLEAN_REPO -eq 0 ]; then 
     write_error "Dirty Repo? Exiting..."
     release_lock
     exit 1
@@ -374,7 +378,7 @@ if [ $CATCHUP -ne 1 ]; then
             fi
         else
             # Removing file
-            write_info "Not existing file ${REMOTE_PATH}${file}, removing..."
+            write_info "[$done_items of $total_items] Not existing file ${REMOTE_PATH}${file}, removing..."
             if [ ${DRY_RUN} -ne 1 ]; then
                 remove_file ${file}
                 check_exit_status "Could not remove file ${REMOTE_PATH}${file}"
