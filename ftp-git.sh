@@ -267,63 +267,49 @@ write_log "Path is '${REMOTE_PATH}'"
 #
 
 
-
+date_offset=0
+date_length=13
+filename_offset=0
 
 list_dir() {
-    # get list from ftp (replace whitespaces for easier iterating)
-    list=`$CURL_BIN "ftp://${REMOTE_HOST}/$1" --user "${REMOTE_USER}:${REMOTE_PASSWD}" -s`
-    list=`echo "$list" | sed 's/ /;/g'`
+    root="$1"
+    directory="$root"
+    connect_to="ftp://${REMOTE_USER}:${REMOTE_PASSWD}@${REMOTE_HOST}/$root"
     
-    echo "ftp -n '${REMOTE_USER}:${REMOTE_PASSWD}@ftp://${REMOTE_HOST}/$1'"
+    ftp -n $connect_to
+    release_lock
+    exit
     
-        
-    # traverse folders and files separately
-    files=`echo "$list" | grep "^-"`
-    if [ "$files" != "" ]; then
-        traverse_files "$files" "$1"
-    fi
-    
-    folders=`echo "$list" | grep "^d"`
-    if [ "$folders" != "" ]; then
-        traverse_folders "$folders" "$1"
-    fi
-}
-
-traverse_folders() {
-    # descend into subfolder
-    for folder in $1; do
-        folder_name=`get_file_name $folder/`
-        full_name="$2$folder_name"
-        echo "$full_name ## DIR"
-        list_dir "$full_name"
+    echo "ls -R" | ftp -n $connect_to | while read line; do
+        echo $line
+        if [ "$line" != "" ]; then
+            dir=`echo $line | grep ":$"`
+            if [ "$dir" != "" ]; then
+                # directory
+                directory=$root${line:0:$(( ${#line} - 1 ))}/
+                echo "$directory ## DIR"
+            else
+                item=`echo $line | grep -o "^-[rwx-]*"`
+                if [ ${#item} -eq 10 ]; then
+                    # file
+                    if [ $date_offset -eq 0 ]; then
+                        derive_offsets "$line"
+                    fi
+                    echo "$directory${line:$filename_offset} ## ${line:$date_offset:$date_length}"
+                fi
+            fi
+        fi
     done
 }
 
-traverse_files() {
-    # traverse files
-    for file in $1; do
-        file_name=`get_file_name $file`
-        # get file date
-        start=$(( ${#file} - ${#file_name} - 13))
-        date=`echo ${file:$start:12} | sed 's/;/ /g'`
-        echo "$2$file_name ## $date"
-    done
-}
-
-# get file name from list record
-get_file_name() {
-    # TODO: two date formats
-    # -rw-r--r--;;;1;user;group;;;;;;;;;;3;Apr;10;16:53;file1.txt
-    # drwxr-xr-x;;;2;user;group;;;;;;;4096;Sep;29;;2007;new;folder
-    
-    record=$1
-    
+derive_offsets() {
     ex_month="[A-Z][a-z][a-z]"
     ex_day=".[0-9]"
     ex_time="[0-9][0-9]:[0-9][0-9]"
+    match=`echo "$1" | grep -o " $ex_month $ex_day $ex_time .*$"`
     
-    match=`echo $record | grep -o ";$ex_month;$ex_day;$ex_time;.*$"`
-    echo ${match:14} | sed 's/;/ /g'
+    date_offset=$(( ${#1} - ${#match} + 1 ))
+    filename_offset=$(( $date_offset + $date_length ))
 }
 
 # log file names
@@ -331,9 +317,19 @@ ftp_log=".ftp-git-live.log"
 local_log=".ftp-git.log"
 
 # write log
-echo ""
-list_dir "${REMOTE_PATH}git-ftp-test/" | tee $ftp_log
-echo ""
+write_info "Generating List from FTP..."
+list_dir "${REMOTE_PATH}" > $ftp_log
+
+# statistics
+item_cnt=`cat $ftp_log | wc -l`
+dir_cnt=`cat $ftp_log | grep "DIR$" | wc -l`
+dir_cnt=$(( $dir_cnt ))
+file_cnt=$(( $item_cnt - $dir_cnt ))
+write_info "$file_cnt Files, $dir_cnt Directories found"
+
+release_lock
+exit 0
+
 
 delete_local_file() {
     echo "DELETE $1"
