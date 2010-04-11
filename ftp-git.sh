@@ -301,10 +301,12 @@ if [ ${FORCE} -ne 1 ]; then
     # Check if are at master branch
     CURRENT_BRANCH="`${GIT_BIN} branch | grep '*' | cut -d ' ' -f 2`" 
     if [ "${CURRENT_BRANCH}" != "master" ]; then 
-        write_info "You are not on master branch.
-Are you sure about deploying branch '${CURRENT_BRANCH}'? [Y/n]"
-        read answer_branch
-        if [ "${answer_branch}" = "n" ] || [ "${answer_branch}" = "N" ]; then
+        echo ""
+        echo "You are not on master branch."
+        echo -n "Master will be synced anyway. Continue? (yes/no) "
+        read answer
+        echo ""
+        if [ $answer != "yes" ] && [ $answer != "y" ]; then
             write_info "Aborting..."
             release_lock
             exit 0
