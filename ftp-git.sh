@@ -1,33 +1,90 @@
 #!/bin/sh
+
+#
+# FTP-GIT
+# Synchronize down from FTP Server
 #
 # Copyright (c) 2010 
 # Timo Besenreuther <timo@ezdesign.de>
+# Based on git-ftp by Eric Greve <ericgreve@gmail.com>
 #
 
-#
-# copied from git-ftp
-# TODO: move to lib.sh
-#
+
+# ------------------------------------------------------------
+# Setup Environment
+# ------------------------------------------------------------
 
 # General config
 DEFAULT_PROTOCOL="ftp"
-DEPLOYED_SHA1_FILE=".git-ftp.log"
+LOG_FILE=".ftp-git.log"
+LOG_FILE_TEMP=".ftp-git.cached.log"
 GIT_BIN="/usr/bin/git"
 CURL_BIN="/usr/bin/curl"
 LCK_FILE="`basename $0`.lck"
 
+
+# ------------------------------------------------------------
 # Defaults
+# ------------------------------------------------------------
 URL=""
 REMOTE_PROTOCOL=""
 REMOTE_HOST=""
 REMOTE_USER=${USER}
 REMOTE_PASSWD=""
 REMOTE_PATH=""
+HTTP_URL=""
 VERBOSE=0
-IGNORE_DEPLOYED=0
 DRY_RUN=0
-CATCHUP=0
 FORCE=0
+
+
+# ------------------------------------------------------------
+# Documentation
+# ------------------------------------------------------------
+
+VERSION='0.3'
+AUTHORS='Timo Besenreuther <timo@ezdesign.de>'
+ 
+usage_long() {
+cat << EOF
+USAGE: 
+        ftp-git [<options>] <url> [<options>]
+
+DESCRIPTION:
+        Synchronize FTP with local git repository (download from FTP).
+
+        Version $VERSION
+        Authors $AUTHORS
+
+URL:
+        ftp://host.example.com[:<port>][/<remote path>]
+
+OPTIONS:
+        -h, --help      Show this message
+        -u, --user      FTP login name
+        -p, --passwd    FTP password
+        -h, --http      The HTTP equivalent to the FTP URL
+        -D, --dry-run   Dry run: Does not upload anything
+        -f, --force     Force, does not ask questions
+        -v, --verbose   Verbose
+        
+EXAMPLE:
+        ftp-git ftp://example.com/httpdocs/ -v -u username -p p4ssw0rd --http http://www.example.com/
+EOF
+exit 0
+}
+
+usage() {
+cat << EOF
+ftp-git [<options>] <url> [<options>]
+EOF
+exit 1
+}
+
+
+# ------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------
 
 ask_for_passwd() {
     echo -n "Password: "
@@ -70,6 +127,31 @@ write_info() {
     fi
 }
 
+write_head() {
+    echo ""
+    echo $1
+    echo "**************************************************"
+}
+
+write_head_small() {
+    echo ""
+    echo "# $1"
+}
+
+# Release lock func
+release_lock() {
+    write_log "Releasing lock"
+    rm -f "${LCK_FILE}"
+    if [ -f "$LOG_FILE_TEMP" ]; then
+        rm -f "$LOG_FILE_TEMP"
+    fi
+}
+
+
+# ------------------------------------------------------------
+# Up- / download functions
+# ------------------------------------------------------------
+
 upload_file() {
     source_file=${1}
     dest_file=${2}
@@ -81,13 +163,24 @@ upload_file() {
 
 remove_file() {
     file=${1}
-    ${CURL_BIN} --user ${REMOTE_USER}:${REMOTE_PASSWD} -Q "-DELE ${REMOTE_PATH}${file}" ftp://${REMOTE_HOST}
+    ${CURL_BIN} -s --user ${REMOTE_USER}:${REMOTE_PASSWD} -Q "-DELE ${REMOTE_PATH}${file}" ftp://${REMOTE_HOST}
 }
 
 get_file_content() {
     source_file=${1}
     ${CURL_BIN} -s --user ${REMOTE_USER}:${REMOTE_PASSWD} ftp://${REMOTE_HOST}/${REMOTE_PATH}${source_file}
 }
+
+download_file() {
+    source_file="${1}"
+    dest_file="${2}"
+    ${CURL_BIN} --user "${REMOTE_USER}:${REMOTE_PASSWD}" "ftp://${REMOTE_HOST}/${REMOTE_PATH}${source_file}" -o "${dest_file}"
+}
+
+
+# ------------------------------------------------------------
+# Read params
+# ------------------------------------------------------------
 
 while test $# != 0
 do
@@ -129,12 +222,16 @@ do
                     ;;
             esac
             ;;
-        -a|--all)
-            IGNORE_DEPLOYED=1
-            ;;
-        -c|--catchup)
-            CATCHUP=1
-            write_info "Catching up, only SHA1 hash will be uploaded"
+        -h|--http*)
+            case "$#,$1" in
+                *,*=*)
+                    HTTP_URL=`expr "z$1" : 'z-[^=]*=\(.*\)'`
+                    ;;
+                *)
+                    HTTP_URL="$2"
+                    shift
+                    ;;
+            esac
             ;;
         -D|--dry-run)
             DRY_RUN=1
@@ -155,11 +252,10 @@ do
     shift
 done
 
-# Release lock func
-release_lock() {
-    write_log "Releasing lock"
-    rm -f "${LCK_FILE}"
-}
+
+# ------------------------------------------------------------
+# Do some checks
+# ------------------------------------------------------------
 
 # Check if the git working dir is dirty
 # This must be checked before lock is written,
@@ -183,7 +279,7 @@ if [ -f "${LCK_FILE}" ]; then
         exit 0
     fi
 else
-    write_log "Not running"
+    write_log "No other process running"
     echo $$ > "${LCK_FILE}"
 fi
 
@@ -206,7 +302,7 @@ if [ ${FORCE} -ne 1 ]; then
     CURRENT_BRANCH="`${GIT_BIN} branch | grep '*' | cut -d ' ' -f 2`" 
     if [ "${CURRENT_BRANCH}" != "master" ]; then 
         write_info "You are not on master branch.
-Are you sure deploying branch '${CURRENT_BRANCH}'? [Y/n]"
+Are you sure about deploying branch '${CURRENT_BRANCH}'? [Y/n]"
         read answer_branch
         if [ "${answer_branch}" = "n" ] || [ "${answer_branch}" = "N" ]; then
             write_info "Aborting..."
@@ -215,6 +311,18 @@ Are you sure deploying branch '${CURRENT_BRANCH}'? [Y/n]"
         fi
     fi 
 fi
+
+# Check if HTTP URL was specified
+if [ "$HTTP_URL" = "" ]; then
+    write_error "No HTTP URL (http|h) specified! Exiting..."
+    release_lock
+    exit 1
+fi
+
+
+# ------------------------------------------------------------
+# Derive URL parts
+# ------------------------------------------------------------
 
 # Split host from url
 REMOTE_HOST=`echo "${URL}" | sed "s/.*:\/\/\([a-z0-9\.:-]*\).*/\1/"`
@@ -262,132 +370,218 @@ write_log "Host is '${REMOTE_HOST}'"
 write_log "User is '${REMOTE_USER}'"
 write_log "Path is '${REMOTE_PATH}'"
 
-#
-# end copied from git-ftp
-#
 
-
-date_offset=0
-date_length=13
-filename_offset=0
-
-list_dir() {
-    root="$1"
-    directory="$root"
-    connect_to="ftp://${REMOTE_USER}:${REMOTE_PASSWD}@${REMOTE_HOST}/$root"
-    
-    ftp -n $connect_to
-    release_lock
-    exit
-    
-    echo "ls -R" | ftp -n $connect_to | while read line; do
-        echo $line
-        if [ "$line" != "" ]; then
-            dir=`echo $line | grep ":$"`
-            if [ "$dir" != "" ]; then
-                # directory
-                directory=$root${line:0:$(( ${#line} - 1 ))}/
-                echo "$directory ## DIR"
-            else
-                item=`echo $line | grep -o "^-[rwx-]*"`
-                if [ ${#item} -eq 10 ]; then
-                    # file
-                    if [ $date_offset -eq 0 ]; then
-                        derive_offsets "$line"
-                    fi
-                    echo "$directory${line:$filename_offset} ## ${line:$date_offset:$date_length}"
-                fi
-            fi
-        fi
-    done
-}
-
-derive_offsets() {
-    ex_month="[A-Z][a-z][a-z]"
-    ex_day=".[0-9]"
-    ex_time="[0-9][0-9]:[0-9][0-9]"
-    match=`echo "$1" | grep -o " $ex_month $ex_day $ex_time .*$"`
-    
-    date_offset=$(( ${#1} - ${#match} + 1 ))
-    filename_offset=$(( $date_offset + $date_length ))
-}
-
-# log file names
-ftp_log=".ftp-git-live.log"
-local_log=".ftp-git.log"
-
-# write log
-write_info "Generating List from FTP..."
-list_dir "${REMOTE_PATH}" > $ftp_log
-
-# statistics
-item_cnt=`cat $ftp_log | wc -l`
-dir_cnt=`cat $ftp_log | grep "DIR$" | wc -l`
-dir_cnt=$(( $dir_cnt ))
-file_cnt=$(( $item_cnt - $dir_cnt ))
-write_info "$file_cnt Files, $dir_cnt Directories found"
-
-release_lock
-exit 0
-
+# ------------------------------------------------------------
+# More specific helper functions
+# ------------------------------------------------------------
 
 delete_local_file() {
-    echo "DELETE $1"
-    echo get_file_name_from_log $1
+    file_name=`get_file_name_from_log "$1"`
+    file_date=`get_file_date_from_log "$1"`
+    if [ $file_date == "DIR" ]; then
+        write_head_small "REMOVE DIR $file_name"
+        if [ $DRY_RUN -eq 1 ]; then
+            echo "rm -R \"$file_name\""
+        else
+            if [ -d "$file_name" ]; then
+                rm -R "$file_name"
+            else
+                echo "WARNING: DIRECTORY DOES NOT EXIST"
+            fi
+        fi
+    else
+        write_head_small "REMOVE FILE $file_name"
+        if [ $DRY_RUN -eq 1 ]; then
+            echo "rm \"$file_name\""
+        else
+            if [ -f "$file_name" ]; then
+                rm "$file_name"
+            else
+                echo "WARNING: FILE DOES NOT EXIST"
+            fi
+        fi
+    fi
 }
 
 update_local_file() {
-    echo "UPDATE $1"
+    file_name=`get_file_name_from_log "$1"`
+    file_date=`get_file_date_from_log "$1"`
+    if [ "$file_name" != "./.ftp-git.log" ]; then
+        if [ "$file_name" != "./.git-ftp.log" ]; then
+            if [ $file_date == "DIR" ]; then
+                write_head_small "CREATE DIR $file_name"
+                if [ $DRY_RUN -eq 1 ]; then
+                    echo "mkdir \"$file_name\""
+                else
+                    if [ ! -d "$file_name" ]; then
+                        mkdir "$file_name"
+                    fi
+                fi
+            else
+                write_head_small "UPDATE FILE $file_name"
+                if [ $DRY_RUN -eq 1 ]; then
+                    echo "download_file \"${file_name:2}\" \"$file_name\""
+                else
+                    download_file "${file_name:2}" "$file_name"
+                fi
+            fi
+        fi
+    fi
 }
 
 get_file_name_from_log() {
     echo "$1" | sed "s/\(.*\) ## .*/\1/"
 }
 
-get_date_from_log() {
-    
+get_file_date_from_log() {
+    echo "$1" | sed "s/.* ## \(.*\)/\1/"
 }
 
+
+# ------------------------------------------------------------
+# Main part
+# ------------------------------------------------------------
+
+#
+# 1. Try to merge master onto ftp-git branch
+#
+
+# create branch
+branch=`$GIT_BIN branch | grep " ftp-git$"`
+if [ "$branch" == "" ]; then
+    write_head "Creating ftp-git branch"
+    echo `$GIT_BIN branch ftp-git`
+fi
+
+# checkout branch
+branch=`$GIT_BIN branch | grep "* ftp-git$"`
+if [ "$branch" == "" ]; then
+    write_head "Checking out ftp-git"
+    echo `$GIT_BIN checkout ftp-git`
+fi
+
+# merge master
+write_head "Attempting to merge master onto ftp-git"
+echo `$GIT_BIN merge master`
+
+echo ""
+echo "Please check the merge above."
+echo -n "Did everything go nice and smooth? (yes/no) "
+read answer
+if [ $answer != "yes" ] && [ $answer != "y" ]; then
+    echo "Exiting..."
+    release_lock
+    exit 1
+fi
+
+
+#
+# 2. Generate new list
+#
+
+write_head "Generating list from webserver"
+
+script="ftp-git.php"
+git_ftp_dir=`echo $0 | sed "s/\(.*\)\/.*/\1/"`
+
+upload_file "$git_ftp_dir/$script" $script
+curl -s "$HTTP_URL/$script" -o $LOG_FILE_TEMP
+temp=`remove_file "$script"`
+
+# statistics
+item_cnt=`cat $LOG_FILE_TEMP | wc -l`
+dir_cnt=`cat $LOG_FILE_TEMP | grep "DIR$" | wc -l`
+dir_cnt=$(( $dir_cnt ))
+file_cnt=$(( $item_cnt - $dir_cnt ))
+
+echo "> $file_cnt files, $dir_cnt directories found"
+
+
+#
+# 3. Compare to list from working directory
+# 4. Download updates
+#
+
+write_head "Comparing the lists"
+
 # compare logs
-# TODO: compare dates
-while read ftp_line <&7
+eof_line="zzzzzzzzzzzzzz"
+while true
 do
-    read local_line <&8
-    if [ "$local_line" == "" ]; then
-        # TODO: go through rest of other file
-        echo "!!! EOF LOCAL !!!"
-        break 2
+    read live_line <&7
+    if [ "$live_line" == "" ]; then
+        live_line=$eof_line
     fi
     
-    while [ "$ftp_line" != "$local_line" ]; do
+    read cached_line <&8
+    if [ "$cached_line" == "" ]; then
+        cached_line=$eof_line
+    fi
+    
+    while [ "$live_line" != "$cached_line" ]; do
         
-        while [ "$ftp_line" \> "$local_line" ]; do
-            delete_local_file "$local_line"
-            read local_line <&8
-            if [ "$local_line" == "" ]; then
-                # TODO: go through rest of other file
-                echo "!!! EOF LOCAL !!!"
-                break 2
+        live_name=`get_file_name_from_log "$live_line"`
+        cached_name=`get_file_name_from_log "$cached_line"`
+        
+        if [ "$live_name"  ==  "$cached_line" ]; then
+            update_local_file "$live_line"
+            break
+        fi
+        
+        while [ "$live_line" \> "$cached_line" ]; do
+            delete_local_file "$cached_line"
+            read cached_line <&8
+            if [ "$cached_line" == "" ]; then
+                cached_line=$eof_line
             fi
         done
         
-        while [ "$ftp_line" \< "$local_line" ]; do
-            update_local_file "$ftp_line"
-            read ftp_line <&7
-            if [ "$ftp_line" == "" ]; then
-                # TODO: go through rest of other file
-                echo "!!! EOF FTP !!!"
-                break 2
+        while [ "$live_line" \< "$cached_line" ]; do
+            update_local_file "$live_line"
+            read live_line <&7
+            if [ "$live_line" == "" ]; then
+                live_line=$eof_line
             fi
         done
         
     done
     
+    if [ "$cached_line" == "$eof_line" -a "$live_line" == "$eof_line" ]; then
+        break;
+    fi
+    
 done \
-    7<$ftp_log \
-    8<$local_log
+    7<$LOG_FILE_TEMP \
+    8<$LOG_FILE
 
 echo ""
+echo "DONE!"
+
+
+#
+# 5. Update list
+#
+
+rm -f $LOG_FILE
+mv $LOG_FILE_TEMP $LOG_FILE
+
+git add "$LOG_FILE"
+
+
+# ------------------------------------------------------------
+# Instructions for user
+# ------------------------------------------------------------
+
+echo ""
+echo "******************************************************************************"
+echo "you are now on branch ftp-git. please review the changes and merge the branch."
+echo "******************************************************************************"
+echo ""
+
+
+# ------------------------------------------------------------
+# Clean up
+# ------------------------------------------------------------
 
 release_lock
 exit 0
