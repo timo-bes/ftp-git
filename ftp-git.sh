@@ -370,7 +370,11 @@ REMOTE_PATH=`echo "${URL}" | sed "s/[^\/]*\.[a-z0-9:]*\/\(.*\)/\1/"`
 # Add trailing slash if missing 
 if [ ! -z ${REMOTE_PATH} ] && [ `echo "${REMOTE_PATH}" | egrep "*/$" | wc -l` -ne 1 ]; then
     write_log "Added missing trailing / in path"
-    REMOTE_PATH="${REMOTE_PATH}/"  
+    REMOTE_PATH="${REMOTE_PATH}/"
+fi
+if [ ! -z ${HTTP_URL} ] && [ `echo "${HTTP_URL}" | egrep "*/$" | wc -l` -ne 1 ]; then
+    write_log "Added missing trailing / in HTTP url"
+    HTTP_URL="${HTTP_URL}/"
 fi
 
 write_log "Host is '${REMOTE_HOST}'"
@@ -492,7 +496,7 @@ script="ftp-git.php"
 git_ftp_dir=`echo $0 | sed "s/\(.*\)\/.*/\1/"`
 
 upload_file "$git_ftp_dir/$script" $script
-curl -s "$HTTP_URL/$script" -o $LOG_FILE_TEMP
+curl -s "$HTTP_URL$script" -o $LOG_FILE_TEMP
 temp=`remove_file "$script"`
 
 # statistics
