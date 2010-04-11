@@ -298,10 +298,15 @@ REMOTE_PROTOCOL=`echo "${URL}" | sed "s/\(ftp\).*/\1/"`
 if [ -z ${REMOTE_PROTOCOL} ]; then
     write_info "Protocol unknown or not set, using default protocol '${DEFAULT_PROTOCOL}'"
     REMOTE_PROTOCOL=${DEFAULT_PROTOCOL}
+else
+    # remove protocol from url
+    # otherwise the path can't be found for urls like ftp://example.com/example.com/mydir/
+    protocol_length=$(( ${#REMOTE_PROTOCOL} + 3 ))
+    URL=${URL:$protocol_length}
 fi
 
 # Split remote path from url
-REMOTE_PATH=`echo "${URL}" | sed "s/.*\.[a-z0-9:]*\/\(.*\)/\1/"`
+REMOTE_PATH=`echo "${URL}" | sed "s/[^\/]*\.[a-z0-9:]*\/\(.*\)/\1/"`
 
 # Add trailing slash if missing 
 if [ ! -z ${REMOTE_PATH} ] && [ `echo "${REMOTE_PATH}" | egrep "*/$" | wc -l` -ne 1 ]; then
