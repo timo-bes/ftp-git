@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 # FTP-GIT
@@ -380,7 +380,7 @@ write_log "Path is '${REMOTE_PATH}'"
 delete_local_file() {
     file_name=`get_file_name_from_log "$1"`
     file_date=`get_file_date_from_log "$1"`
-    if [ $file_date == "DIR" ]; then
+    if [ "$file_date" == "DIR" ]; then
         write_head_small "REMOVE DIR $file_name"
         if [ $DRY_RUN -eq 1 ]; then
             echo "rm -R \"$file_name\""
