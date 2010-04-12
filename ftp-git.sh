@@ -472,6 +472,13 @@ write_head "Generating list from webserver"
 script="ftp-git.php"
 git_ftp_dir=`expr "${0}" : "\(.*\)\/.*"`
 
+# get old list
+echo "# get old log"
+download_file $LOG_FILE $LOG_FILE
+
+# get new list
+echo ""
+echo "# generate new log"
 upload_file "$git_ftp_dir/$script" $script
 curl -s "$HTTP_URL$script" -o $LOG_FILE_TEMP
 temp=`remove_file "$script"`
@@ -482,7 +489,8 @@ dir_cnt=`cat $LOG_FILE_TEMP | grep "DIR$" | wc -l`
 dir_cnt=$(( $dir_cnt ))
 file_cnt=$(( $item_cnt - $dir_cnt ))
 
-echo "> $file_cnt files, $dir_cnt directories found"
+echo ""
+echo ">>> $file_cnt files, $dir_cnt directories found"
 
 
 #
@@ -554,8 +562,12 @@ fi
 # 5. Update list
 #
 
+echo ""
+echo "# uploading new log"
+upload_file $LOG_FILE_TEMP $LOG_FILE
+
 rm -f $LOG_FILE
-mv $LOG_FILE_TEMP $LOG_FILE
+rm -f $LOG_FILE_TEMP
 
 write_head "Committing changes..."
 
