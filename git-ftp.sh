@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # Copyright (c) 2010 
 # René Moser <mail@renemoser.net>
@@ -294,11 +294,6 @@ REMOTE_PROTOCOL=`expr "${URL}" : "\(ftp\).*"`
 if [ -z ${REMOTE_PROTOCOL} ]; then
     write_info "Protocol unknown or not set, using default protocol '${DEFAULT_PROTOCOL}'"
     REMOTE_PROTOCOL=${DEFAULT_PROTOCOL}
-else
-    # remove protocol from url
-    # otherwise the path can't be found for urls like ftp://example.com/example.com/mydir/
-    protocol_length=$(( ${#REMOTE_PROTOCOL} + 3 ))
-    URL=${URL:$protocol_length}
 fi
 
 # Split remote path from url
