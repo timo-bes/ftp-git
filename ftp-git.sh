@@ -63,7 +63,7 @@ OPTIONS:
         -h, --help      Show this message
         -u, --user      FTP login name
         -p, --passwd    FTP password
-        -h, --http      The HTTP equivalent to the FTP URL
+        -w, --http      The HTTP equivalent to the FTP URL
         -D, --dry-run   Dry run: Does not upload anything
         -f, --force     Force, does not ask questions
         -v, --verbose   Verbose
@@ -222,7 +222,7 @@ do
                     ;;
             esac
             ;;
-        -h|--http*)
+        -w|--http*)
             case "$#,$1" in
                 *,*=*)
                     HTTP_URL=`expr "z$1" : 'z-[^=]*=\(.*\)'`
