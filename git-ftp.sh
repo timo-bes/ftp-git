@@ -128,7 +128,7 @@ upload_file() {
 
 remove_file() {
     file=${1}
-    ${CURL_BIN} --user ${REMOTE_USER}:${REMOTE_PASSWD} -Q "-DELE ${REMOTE_PATH}${file}" ftp://${REMOTE_HOST}
+    ${CURL_BIN} -s --user ${REMOTE_USER}:${REMOTE_PASSWD} -Q "-DELE ${REMOTE_PATH}${file}" ftp://${REMOTE_HOST} > /dev/null 2>&1
 }
 
 get_file_content() {
@@ -354,30 +354,29 @@ else
     FILES_CHANGED="`${GIT_BIN} ls-files`"
 fi
 
-if [ $CATCHUP -ne 1 ]; then
-    # Calculate total file count
-    done_items=0
-    total_items=`echo $FILES_CHANGED | wc -w`
-    total_items=$((total_items+0)) # trims whitespaces produced by wc
-    write_log "There are $total_items changed files"
+# Calculate total file count
+done_items=0
+total_items=`echo ${FILES_CHANGED} | wc -w`
+total_items=$((total_items+0)) # trims whitespaces produced by wc
+write_log "There are ${total_items} changed files"
 
-    # Upload to ftp
+# Upload to ftp
+if [ $CATCHUP -ne 1 ]; then
     for file in ${FILES_CHANGED}; do
         done_items=$(($done_items+1))
         # File exits?
         if [ -f ${file} ]; then 
             # Uploading file
-            write_info "[$done_items of $total_items] Uploading ${file} to ftp://${REMOTE_HOST}/${REMOTE_PATH}${file}"
+            write_info "[${done_items} of ${total_items}] Uploading ${file} to ftp://${REMOTE_HOST}/${REMOTE_PATH}${file}"
             if [ ${DRY_RUN} -ne 1 ]; then
                 upload_file ${file}
                 check_exit_status "Could not upload"
             fi
         else
             # Removing file
-            write_info "Not existing file ${REMOTE_PATH}${file}, removing..."
+            write_info "[${done_items} of ${total_items}] Not existing file ${REMOTE_PATH}${file}, removing..."
             if [ ${DRY_RUN} -ne 1 ]; then
                 remove_file ${file}
-                check_exit_status "Could not remove file ${REMOTE_PATH}${file}"
             fi
         fi
     done
