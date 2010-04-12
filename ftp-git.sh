@@ -34,6 +34,7 @@ REMOTE_PASSWD=""
 REMOTE_PATH=""
 HTTP_URL=""
 VERBOSE=0
+CATCHUP=0
 DRY_RUN=0
 DEPLOYED_SHA1_FILE=""
 
@@ -65,6 +66,7 @@ OPTIONS:
         -p, --passwd    FTP password
         -w, --http      The HTTP equivalent to the FTP URL
         -D, --dry-run   Dry run: Does not upload anything
+        -c, --catchup   Updates log file downloading files
         -v, --verbose   Verbose
         -s, --sha1      Name of SHA1 file on server (if set, SHA1 is deployed)
         
@@ -247,6 +249,10 @@ do
         -D|--dry-run)
             DRY_RUN=1
             write_info "Running dry, won't do anything"            
+            ;;
+        -c|--catchup)
+            CATCHUP=1
+            write_info "Catching up, only list will be downloaded"
             ;;
         -v|--verbose)
             VERBOSE=1
@@ -439,21 +445,21 @@ get_file_date_from_log() {
 # ------------------------------------------------------------
 
 #
-# 1. Switch to ftp-git branch
+# 1. Switch to ftp branch
 #
 
 # create branch
-branch=`$GIT_BIN branch | grep " ftp-git$"`
+branch=`$GIT_BIN branch | grep " ftp$"`
 if [ "$branch" == "" ]; then
-    write_head "Creating ftp-git branch"
-    $GIT_BIN branch ftp-git
+    write_head "Creating ftp branch"
+    $GIT_BIN branch ftp
 fi
 
 # checkout branch
-branch=`$GIT_BIN branch | grep "* ftp-git$"`
+branch=`$GIT_BIN branch | grep "* ftp$"`
 if [ "$branch" == "" ]; then
-    write_head "Checking out ftp-git"
-    $GIT_BIN checkout ftp-git
+    write_head "Checking out ftp branch"
+    $GIT_BIN checkout ftp
 fi
 
 
@@ -484,60 +490,64 @@ echo "> $file_cnt files, $dir_cnt directories found"
 # 4. Download updates
 #
 
-write_head "Comparing the lists"
+if [ $CATCHUP -ne 1 ]; then
 
-# compare logs
-eof_line="zzzzzzzzzzzzzz"
-while true
-do
-    read live_line <&7
-    if [ "$live_line" == "" ]; then
-        live_line=$eof_line
-    fi
-    
-    read cached_line <&8
-    if [ "$cached_line" == "" ]; then
-        cached_line=$eof_line
-    fi
-    
-    while [ "$live_line" != "$cached_line" ]; do
-        
-        live_name=`get_file_name_from_log "$live_line"`
-        cached_name=`get_file_name_from_log "$cached_line"`
-        
-        if [ "$live_name"  ==  "$cached_line" ]; then
-            update_local_file "$live_line"
-            break
+    write_head "Comparing the lists"
+
+    # compare logs
+    eof_line="zzzzzzzzzzzzzz"
+    while true
+    do
+        read live_line <&7
+        if [ "$live_line" == "" ]; then
+            live_line=$eof_line
         fi
-        
-        while [ "$live_line" \> "$cached_line" ]; do
-            delete_local_file "$cached_line"
-            read cached_line <&8
-            if [ "$cached_line" == "" ]; then
-                cached_line=$eof_line
-            fi
-        done
-        
-        while [ "$live_line" \< "$cached_line" ]; do
-            update_local_file "$live_line"
-            read live_line <&7
-            if [ "$live_line" == "" ]; then
-                live_line=$eof_line
-            fi
-        done
-        
-    done
     
-    if [ "$cached_line" == "$eof_line" -a "$live_line" == "$eof_line" ]; then
-        break;
-    fi
+        read cached_line <&8
+        if [ "$cached_line" == "" ]; then
+            cached_line=$eof_line
+        fi
     
-done \
-    7<$LOG_FILE_TEMP \
-    8<$LOG_FILE
+        while [ "$live_line" != "$cached_line" ]; do
+        
+            live_name=`get_file_name_from_log "$live_line"`
+            cached_name=`get_file_name_from_log "$cached_line"`
+        
+            if [ "$live_name"  ==  "$cached_line" ]; then
+                update_local_file "$live_line"
+                break
+            fi
+        
+            while [ "$live_line" \> "$cached_line" ]; do
+                delete_local_file "$cached_line"
+                read cached_line <&8
+                if [ "$cached_line" == "" ]; then
+                    cached_line=$eof_line
+                fi
+            done
+        
+            while [ "$live_line" \< "$cached_line" ]; do
+                update_local_file "$live_line"
+                read live_line <&7
+                if [ "$live_line" == "" ]; then
+                    live_line=$eof_line
+                fi
+            done
+        
+        done
+    
+        if [ "$cached_line" == "$eof_line" -a "$live_line" == "$eof_line" ]; then
+            break;
+        fi
+    
+    done \
+        7<$LOG_FILE_TEMP \
+        8<$LOG_FILE
 
-echo ""
-echo "DONE!"
+    echo ""
+    echo "DONE!"
+
+fi
 
 
 #
@@ -550,7 +560,14 @@ mv $LOG_FILE_TEMP $LOG_FILE
 write_head "Committing changes..."
 
 ${GIT_BIN} add -A
-${GIT_BIN} commit -am "FTP Sync @ `eval date +%d/%m/%Y`"
+
+if [ $CATCHUP -ne 1 ]; then
+    msg="download"
+else
+    msg="catchup"
+fi
+
+${GIT_BIN} commit -am "FTP ${msg} @ `date`"
 
 
 #
@@ -577,11 +594,13 @@ ${GIT_BIN} checkout master
 # Instructions for user
 # ------------------------------------------------------------
 
-echo ""
-echo "*****************************************************************************"
-echo "The FTP server has be synchronized to branch ftp-git. Please pull from there."
-echo "*****************************************************************************"
-echo ""
+if [ $CATCHUP -ne 1 ]; then
+    echo ""
+    echo "***************************************************************"
+    echo "The FTP server has be synchronized to branch ftp. Please merge."
+    echo "***************************************************************"
+    echo ""
+fi
 
 
 # ------------------------------------------------------------

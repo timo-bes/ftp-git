@@ -7,8 +7,10 @@ function ftpgit_readdir($dirname) {
 	$handle = opendir($dirname);
 	$files = array();
 	while (false !== ($file = readdir($handle))) {
-		if ($file != '.' && $file != '..' && $dirname.$file != './ftp-git.php') {
-			$files[] = $dirname.$file;
+		$fullName = $dirname.$file;
+		if ($file != '.' && $file != '..' && $fullName != './ftp-git.php'
+				&& $file != '.git-ftp.log' && $file != '.ftp-git.log') {
+			$files[] = $fullName;
 		}
 	}
 	asort($files);
