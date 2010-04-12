@@ -35,6 +35,7 @@ REMOTE_PATH=""
 HTTP_URL=""
 VERBOSE=0
 DRY_RUN=0
+DEPLOYED_SHA1_FILE=""
 
 
 # ------------------------------------------------------------
@@ -65,6 +66,7 @@ OPTIONS:
         -w, --http      The HTTP equivalent to the FTP URL
         -D, --dry-run   Dry run: Does not upload anything
         -v, --verbose   Verbose
+        -s, --sha1      Name of SHA1 file on server (if set, SHA1 is deployed)
         
 EXAMPLE:
         ftp-git ftp://example.com/httpdocs/ -v -u username -p p4ssw0rd --http http://www.example.com/
@@ -231,6 +233,17 @@ do
                     ;;
             esac
             ;;
+        -s|--sha1*)
+            case "$#,$1" in
+                *,*=*)
+                    DEPLOYED_SHA1_FILE=`expr "z$1" : 'z-[^=]*=\(.*\)'`
+                    ;;
+                *)
+                    DEPLOYED_SHA1_FILE="$2"
+                    shift
+                    ;;
+            esac
+            ;;
         -D|--dry-run)
             DRY_RUN=1
             write_info "Running dry, won't do anything"            
@@ -289,21 +302,6 @@ if [ $CLEAN_REPO -eq 0 ]; then
     write_error "Dirty Repo? Exiting..."
     release_lock
     exit 1
-fi 
-
-# Check if are at master branch
-CURRENT_BRANCH="`${GIT_BIN} branch | grep '*' | cut -d ' ' -f 2`" 
-if [ "${CURRENT_BRANCH}" != "master" ]; then 
-    echo ""
-    echo "You are not on the master branch."
-    echo -n "Master will be synced anyway. Continue? (yes/no) "
-    read answer
-    echo ""
-    if [ $answer != "yes" ] && [ $answer != "y" ]; then
-        write_info "Aborting..."
-        release_lock
-        exit 0
-    fi
 fi
 
 # Check if HTTP URL was specified
@@ -441,7 +439,7 @@ get_file_date_from_log() {
 # ------------------------------------------------------------
 
 #
-# 1. Try to merge master onto ftp-git branch
+# 1. Switch to ftp-git branch
 #
 
 # create branch
@@ -456,20 +454,6 @@ branch=`$GIT_BIN branch | grep "* ftp-git$"`
 if [ "$branch" == "" ]; then
     write_head "Checking out ftp-git"
     $GIT_BIN checkout ftp-git
-fi
-
-# merge master
-write_head "Attempting to merge master onto ftp-git"
-$GIT_BIN merge master
-
-echo ""
-echo "Please check the merge above."
-echo -n "Did everything go nice and smooth? (yes/no) "
-read answer
-if [ $answer != "yes" ] && [ $answer != "y" ]; then
-    echo "Exiting..."
-    release_lock
-    exit 1
 fi
 
 
@@ -563,7 +547,30 @@ echo "DONE!"
 rm -f $LOG_FILE
 mv $LOG_FILE_TEMP $LOG_FILE
 
-git add "$LOG_FILE"
+write_head "Committing changes..."
+
+${GIT_BIN} add -A
+${GIT_BIN} commit -am "FTP Sync @ `eval date +%d/%m/%Y`"
+
+
+#
+# 6. Deploy SHA1
+#
+
+if [ "${DEPLOYED_SHA1_FILE}" != "" ]; then
+    DEPLOYED_SHA1=`${GIT_BIN} log -n 1 --pretty=%H`
+    write_head "Uploading commit log"
+    if [ ${DRY_RUN} -ne 1 ]; then
+        echo "${DEPLOYED_SHA1}" | upload_file - ${DEPLOYED_SHA1_FILE}
+        check_exit_status "Could not upload"
+    fi
+    echo "Last deployment changed to ${DEPLOYED_SHA1}";
+    echo ""
+fi
+
+
+# switch back to master
+${GIT_BIN} checkout master
 
 
 # ------------------------------------------------------------
@@ -571,9 +578,9 @@ git add "$LOG_FILE"
 # ------------------------------------------------------------
 
 echo ""
-echo "******************************************************************************"
-echo "you are now on branch ftp-git. please review the changes and merge the branch."
-echo "******************************************************************************"
+echo "*****************************************************************************"
+echo "The FTP server has be synchronized to branch ftp-git. Please pull from there."
+echo "*****************************************************************************"
 echo ""
 
 
