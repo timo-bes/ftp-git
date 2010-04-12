@@ -35,7 +35,6 @@ REMOTE_PATH=""
 HTTP_URL=""
 VERBOSE=0
 DRY_RUN=0
-FORCE=0
 
 
 # ------------------------------------------------------------
@@ -65,7 +64,6 @@ OPTIONS:
         -p, --passwd    FTP password
         -w, --http      The HTTP equivalent to the FTP URL
         -D, --dry-run   Dry run: Does not upload anything
-        -f, --force     Force, does not ask questions
         -v, --verbose   Verbose
         
 EXAMPLE:
@@ -239,11 +237,7 @@ do
             ;;
         -v|--verbose)
             VERBOSE=1
-            ;;
-        -f|--force)
-            FORCE=1
-            write_log "Forced mode enabled"
-            ;;		
+            ;;	
         *)
             # Pass thru anything that may be meant for fetch.
             URL=${1}
@@ -297,21 +291,19 @@ if [ $CLEAN_REPO -eq 0 ]; then
     exit 1
 fi 
 
-if [ ${FORCE} -ne 1 ]; then
-    # Check if are at master branch
-    CURRENT_BRANCH="`${GIT_BIN} branch | grep '*' | cut -d ' ' -f 2`" 
-    if [ "${CURRENT_BRANCH}" != "master" ]; then 
-        echo ""
-        echo "You are not on master branch."
-        echo -n "Master will be synced anyway. Continue? (yes/no) "
-        read answer
-        echo ""
-        if [ $answer != "yes" ] && [ $answer != "y" ]; then
-            write_info "Aborting..."
-            release_lock
-            exit 0
-        fi
-    fi 
+# Check if are at master branch
+CURRENT_BRANCH="`${GIT_BIN} branch | grep '*' | cut -d ' ' -f 2`" 
+if [ "${CURRENT_BRANCH}" != "master" ]; then 
+    echo ""
+    echo "You are not on master branch."
+    echo -n "Master will be synced anyway. Continue? (yes/no) "
+    read answer
+    echo ""
+    if [ $answer != "yes" ] && [ $answer != "y" ]; then
+        write_info "Aborting..."
+        release_lock
+        exit 0
+    fi
 fi
 
 # Check if HTTP URL was specified
