@@ -461,19 +461,19 @@ get_file_date_from_log() {
 branch=`$GIT_BIN branch | grep " ftp-git$"`
 if [ "$branch" == "" ]; then
     write_head "Creating ftp-git branch"
-    echo `$GIT_BIN branch ftp-git`
+    $GIT_BIN branch ftp-git
 fi
 
 # checkout branch
 branch=`$GIT_BIN branch | grep "* ftp-git$"`
 if [ "$branch" == "" ]; then
     write_head "Checking out ftp-git"
-    echo `$GIT_BIN checkout ftp-git`
+    $GIT_BIN checkout ftp-git
 fi
 
 # merge master
 write_head "Attempting to merge master onto ftp-git"
-echo `$GIT_BIN merge master`
+$GIT_BIN merge master
 
 echo ""
 echo "Please check the merge above."
