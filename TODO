@@ -1,1 +1,1 @@
-
+* only upload .ftp-git.log if the new list differs

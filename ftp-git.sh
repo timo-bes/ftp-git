@@ -20,7 +20,7 @@ LOG_FILE=".ftp-git.log"
 LOG_FILE_TEMP=".ftp-git.cached.log"
 GIT_BIN="/usr/bin/git"
 CURL_BIN="/usr/bin/curl"
-LCK_FILE="`basename $0`.lck"
+LCK_FILE=".git/`basename $0`.lck"
 
 
 # ------------------------------------------------------------
@@ -66,7 +66,7 @@ OPTIONS:
         -p, --passwd    FTP password
         -w, --http      The HTTP equivalent to the FTP URL
         -D, --dry-run   Dry run: Does not upload anything
-        -c, --catchup   Updates log file downloading files
+        -c, --catchup   Updates log file without downloading files
         -v, --verbose   Verbose
         -s, --sha1      Name of SHA1 file on server (if set, SHA1 is deployed)
         
@@ -377,29 +377,55 @@ write_log "Path is '${REMOTE_PATH}'"
 # More specific helper functions
 # ------------------------------------------------------------
 
+submodules=`git submodule | grep -o "[^ ]*$"`
+check_file() {
+    # TODO: check .gitignore
+    file_name="$1"
+    file_date="$2"
+    if [ "$file_name" == "" ] || [ "$file_date" == "" ]; then
+        echo "INVALID LINE $file_name $file_date"
+    else
+        ret="ok"
+        for submodule in $submodules; do
+            len=${#submodule}
+            substring=${file_name:2:$len}
+            if [ $substring == $submodule ]; then
+                ret="SUBMODULE FILE $file_name"
+            fi
+        done
+        echo "$ret"
+    fi
+}
+
 delete_local_file() {
     file_name=`get_file_name_from_log "$1"`
     file_date=`get_file_date_from_log "$1"`
-    if [ "$file_date" == "DIR" ]; then
-        write_head_small "REMOVE DIR $file_name"
-        if [ $DRY_RUN -eq 1 ]; then
-            echo "rm -R \"$file_name\""
-        else
-            if [ -d "$file_name" ]; then
-                rm -R "$file_name"
-            else
-                echo "WARNING: DIRECTORY DOES NOT EXIST"
-            fi
-        fi
+    
+    check=`check_file "$file_name" "$file_date"`
+    if [ "$check" != "ok" ]; then
+        echo "$check"
     else
-        write_head_small "REMOVE FILE $file_name"
-        if [ $DRY_RUN -eq 1 ]; then
-            echo "rm \"$file_name\""
-        else
-            if [ -f "$file_name" ]; then
-                rm "$file_name"
+        if [ "$file_date" == "DIR" ]; then
+            write_head_small "REMOVE DIR $file_name"
+            if [ $DRY_RUN -eq 1 ]; then
+                echo "rm -R \"$file_name\""
             else
-                echo "WARNING: FILE DOES NOT EXIST"
+                if [ -d "$file_name" ]; then
+                    rm -R "$file_name"
+                else
+                    echo "WARNING: DIRECTORY DOES NOT EXIST"
+                fi
+            fi
+        else
+            write_head_small "REMOVE FILE $file_name"
+            if [ $DRY_RUN -eq 1 ]; then
+                echo "rm \"$file_name\""
+            else
+                if [ -f "$file_name" ]; then
+                    rm "$file_name"
+                else
+                    echo "WARNING: FILE DOES NOT EXIST"
+                fi
             fi
         fi
     fi
@@ -408,23 +434,29 @@ delete_local_file() {
 update_local_file() {
     file_name=`get_file_name_from_log "$1"`
     file_date=`get_file_date_from_log "$1"`
-    if [ "$file_name" != "./.ftp-git.log" ]; then
-        if [ "$file_name" != "./.git-ftp.log" ]; then
-            if [ $file_date == "DIR" ]; then
-                write_head_small "CREATE DIR $file_name"
-                if [ $DRY_RUN -eq 1 ]; then
-                    echo "mkdir \"$file_name\""
-                else
-                    if [ ! -d "$file_name" ]; then
-                        mkdir "$file_name"
+    
+    check=`check_file "$file_name" "$file_date"`
+    if [ "$check" != "ok" ]; then
+        echo "$check"
+    else
+        if [ "$file_name" != "./.ftp-git.log" ]; then
+            if [ "$file_name" != "./.git-ftp.log" ]; then
+                if [ "$file_date" == "DIR" ]; then
+                    write_head_small "CREATE DIR $file_name"
+                    if [ $DRY_RUN -eq 1 ]; then
+                        echo "mkdir \"$file_name\""
+                    else
+                        if [ ! -d "$file_name" ]; then
+                            mkdir "$file_name"
+                        fi
                     fi
-                fi
-            else
-                write_head_small "UPDATE FILE $file_name"
-                if [ $DRY_RUN -eq 1 ]; then
-                    echo "download_file \"${file_name:2}\" \"$file_name\""
                 else
-                    download_file "${file_name:2}" "$file_name"
+                    write_head_small "UPDATE FILE $file_name"
+                    if [ $DRY_RUN -eq 1 ]; then
+                        echo "download_file \"${file_name:2}\" \"$file_name\""
+                    else
+                        download_file "${file_name:2}" "$file_name"
+                    fi
                 fi
             fi
         fi
