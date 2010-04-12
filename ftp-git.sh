@@ -295,7 +295,7 @@ fi
 CURRENT_BRANCH="`${GIT_BIN} branch | grep '*' | cut -d ' ' -f 2`" 
 if [ "${CURRENT_BRANCH}" != "master" ]; then 
     echo ""
-    echo "You are not on master branch."
+    echo "You are not on the master branch."
     echo -n "Master will be synced anyway. Continue? (yes/no) "
     read answer
     echo ""
@@ -319,9 +319,9 @@ fi
 # ------------------------------------------------------------
 
 # Split host from url
-REMOTE_HOST=`echo "${URL}" | sed "s/.*:\/\/\([a-z0-9\.:-]*\).*/\1/"`
+REMOTE_HOST=`expr "${URL}" : ".*:\/\/\([a-z0-9\.:-]*\).*"`
 if [ -z ${REMOTE_HOST} ]; then
-    REMOTE_HOST=`echo "${URL}" | sed "s/^\([a-z0-9\.:-]*\).*/\1/"`
+    REMOTE_HOST=`expr "${URL}" : "^\([a-z0-9\.:-]*\).*"`
 fi
 
 # Some error checks
@@ -343,21 +343,16 @@ if [ ${HAS_ERROR} -ne 0 ]; then
 fi
 
 # Split protocol from url 
-REMOTE_PROTOCOL=`echo "${URL}" | sed "s/\(ftp\).*/\1/"`
+REMOTE_PROTOCOL=`expr "${URL}" : "\(ftp\).*"`
 
 # Check supported protocol
 if [ -z ${REMOTE_PROTOCOL} ]; then
     write_info "Protocol unknown or not set, using default protocol '${DEFAULT_PROTOCOL}'"
     REMOTE_PROTOCOL=${DEFAULT_PROTOCOL}
-else
-    # remove protocol from url
-    # otherwise the path can't be found for urls like ftp://example.com/example.com/mydir/
-    protocol_length=$(( ${#REMOTE_PROTOCOL} + 3 ))
-    URL=${URL:$protocol_length}
 fi
 
 # Split remote path from url
-REMOTE_PATH=`echo "${URL}" | sed "s/[^\/]*\.[a-z0-9:]*\/\(.*\)/\1/"`
+REMOTE_PATH=`expr "${URL}" : ".*\.[a-z0-9:]*\/\(.*\)"`
 
 # Add trailing slash if missing 
 if [ ! -z ${REMOTE_PATH} ] && [ `echo "${REMOTE_PATH}" | egrep "*/$" | wc -l` -ne 1 ]; then
@@ -433,11 +428,11 @@ update_local_file() {
 }
 
 get_file_name_from_log() {
-    echo "$1" | sed "s/\(.*\) ## .*/\1/"
+    expr "${1}" : "\(.*\) ## .*"
 }
 
 get_file_date_from_log() {
-    echo "$1" | sed "s/.* ## \(.*\)/\1/"
+    expr "${1}" : ".* ## \(.*\)"
 }
 
 
@@ -485,7 +480,7 @@ fi
 write_head "Generating list from webserver"
 
 script="ftp-git.php"
-git_ftp_dir=`echo $0 | sed "s/\(.*\)\/.*/\1/"`
+git_ftp_dir=`expr "${0}" : "\(.*\)\/.*"`
 
 upload_file "$git_ftp_dir/$script" $script
 curl -s "$HTTP_URL$script" -o $LOG_FILE_TEMP
