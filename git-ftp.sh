@@ -208,11 +208,6 @@ release_lock() {
     rm -f "${LCK_FILE}"
 }
 
-# Check if the git working dir is dirty
-# This must be checked before lock is written,
-# because otherwise directory is always dirty
-CLEAN_REPO=`${GIT_BIN} status | grep "nothing to commit (working directory clean)" | wc -l`
-
 # Checks locking, make sure this only run once a time
 if [ -f "${LCK_FILE}" ]; then
 
@@ -245,12 +240,13 @@ if [ ! -d ".git" ]; then
     exit 1
 fi 
 
-# Exit if the git working dir is dirty
-if [ $CLEAN_REPO -eq 0 ]; then 
+# Check if the git working dir is dirty
+DIRTY_REPO=`${GIT_BIN} update-index --refresh | wc -l ` 
+if [ ${DIRTY_REPO} -eq 1 ]; then 
     write_error "Dirty Repo? Exiting..."
     release_lock
     exit 1
-fi 
+fi
 
 if [ ${FORCE} -ne 1 ]; then
     # Check if are at master branch
