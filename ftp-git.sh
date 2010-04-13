@@ -270,6 +270,13 @@ done
 # Do some checks
 # ------------------------------------------------------------
 
+# Check if this is a git project here
+if [ ! -d ".git" ]; then
+    write_error "Not a git project? Exiting..."
+    release_lock
+    exit 1
+fi
+
 # Check if the git working dir is dirty
 # This must be checked before lock is written,
 # because otherwise directory is always dirty
@@ -295,13 +302,6 @@ else
     write_log "No other process running"
     echo $$ > "${LCK_FILE}"
 fi
-
-# Check if this is a git project here
-if [ ! -d ".git" ]; then
-    write_error "Not a git project? Exiting..."
-    release_lock
-    exit 1
-fi 
 
 # Exit if the git working dir is dirty
 if [ $CLEAN_REPO -eq 0 ]; then 

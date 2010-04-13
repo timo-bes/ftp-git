@@ -1,1 +1,2 @@
+* make output A LOT more compact (current output is ok for -v)
 * only upload .ftp-git.log if the new list differs
